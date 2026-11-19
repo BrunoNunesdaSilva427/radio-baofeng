@@ -1,4 +1,4 @@
-const CACHE = "baofeng777s-v1";
+const CACHE = "baofeng777s-v2";
 const FILES = ["./","index.html","manifest.webmanifest","icon-192.png","icon-512.png",
   "1.mp3","2.mp3","3.mp3","4.mp3","5.mp3","6.mp3","7.mp3","8.mp3"];
 self.addEventListener("install", e => {
@@ -20,9 +20,20 @@ async function ranged(req, res){            // Safari/iOS exige suporte a Range 
 self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
+  const url = new URL(req.url);
+  const isCode = req.mode === "navigate" || /\/(index\.html|sw\.js|manifest\.webmanifest)?$/.test(url.pathname);
   e.respondWith((async () => {
-    const hit = await caches.match(req, {ignoreSearch:true});
+    if (isCode && !req.headers.get("range")){      // página: tenta a versão nova e guarda; sem internet, usa a guardada
+      try {
+        const net = await fetch(req, {cache:"no-cache"});
+        if (net.ok){ const c = await caches.open(CACHE); c.put(req, net.clone()); }
+        return net;
+      } catch(err){
+        return (await caches.match(req, {ignoreSearch:true})) || (await caches.match("index.html")) || Response.error();
+      }
+    }
+    const hit = await caches.match(req, {ignoreSearch:true});   // áudios e ícones: direto do aparelho
     if (hit) return req.headers.get("range") ? ranged(req, hit) : hit;
-    try { return await fetch(req); } catch(err) { return (await caches.match("index.html")) || Response.error(); }
+    try { return await fetch(req); } catch(err) { return Response.error(); }
   })());
 });
