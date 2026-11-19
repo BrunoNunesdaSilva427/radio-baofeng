@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#14161a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Baofeng 777S</title>
 <style>
 :root{--body:#1b1d22;--panel:#0f1013;--lcd:#9fb58a;--lcd-ink:#1d2a17;--key:#2a2d34;--key-hi:#3a3e47;--txt:#e7e9ee;--dim:#8a8f9c;--red:#e5483c;--grn:#58d36a}
@@ -112,9 +117,11 @@ function initAudio(){
   const wl = ctx.createBiquadFilter(); wl.type="lowpass"; wl.frequency.value=520; wl.Q.value=1.2;
   const wb = ctx.createBiquadFilter(); wb.type="bandpass"; wb.frequency.value=260; wb.Q.value=.35;
   windGain = ctx.createGain(); windGain.gain.value = 0;
+  // oscilação lenta aplicada ANTES do ganho principal, para o vento calar de vez quando windGain = 0
+  const mod = ctx.createGain(); mod.gain.value = .7;
   const lfo = ctx.createOscillator(), lg = ctx.createGain();
-  lfo.frequency.value = .18; lg.gain.value = .03; lfo.connect(lg); lg.connect(windGain.gain); lfo.start();
-  ws.connect(wl); wl.connect(wb); wb.connect(windGain); windGain.connect(ctx.destination); ws.start(0, .7);
+  lfo.frequency.value = .18; lg.gain.value = .3; lfo.connect(lg); lg.connect(mod.gain); lfo.start();
+  ws.connect(wl); wl.connect(wb); wb.connect(mod); mod.connect(windGain); windGain.connect(ctx.destination); ws.start(0, .7);
 }
 
 function burst(dur, vol){            // chiado curto (squelch)
@@ -157,7 +164,7 @@ function tick(tk){
     if (el.currentTime - a0 < .4) pttPause(a1 - a0);
   }
   const now = ctx.currentTime;
-  if (now >= nextGust){ windGain.gain.setTargetAtTime(.05 + Math.random()*.09, now, .9); nextGust = now + 1.5 + Math.random()*3; }
+  if (now >= nextGust){ windGain.gain.setTargetAtTime(.09 + Math.random()*.14, now, .9); nextGust = now + 1.5 + Math.random()*3; }
   if (now >= nextCrk){                       // chiado leve de vez em quando
     burst(.05 + Math.random()*.18, .05 + Math.random()*.1);
     if (Math.random() < .3) setTimeout(()=>{ if (ctx && el && !el.paused) burst(.04, .07); }, 90);
@@ -184,7 +191,7 @@ async function play(i){
   try { await el.play(); } catch(e){ setUI("idle"); $("hint").textContent = "Não foi possível tocar " + AUDIOS[i].file + ". Verifique se o arquivo está na pasta."; return; }
   if (tk !== token) return;
   nextGust = 0; nextCrk = ctx.currentTime + 1 + Math.random()*1.5;
-  windGain.gain.setTargetAtTime(.07, ctx.currentTime, .4);
+  windGain.gain.setTargetAtTime(.14, ctx.currentTime, .4);
   setUI("rx", i); tick(tk);
   el.onended = async () => {           // PTT desacionado
     if (tk !== token) return;
@@ -227,6 +234,13 @@ $("edit").onclick = () => {
   $("edit").textContent = editing ? "Concluir" : "Editar nomes";
   $("hint").textContent = editing ? "Toque em um canal para renomear." : "";
 };
+
+// uso offline: guarda tudo no aparelho na primeira visita com internet
+if ("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js").then(()=>navigator.serviceWorker.ready).then(()=>{
+    if (!$("hint").textContent) $("hint").textContent = "Pronto para usar sem internet.";
+  }).catch(()=>{});
+}
 </script>
 </body>
 </html>
