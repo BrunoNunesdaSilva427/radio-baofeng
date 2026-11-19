@@ -83,7 +83,7 @@ const KEY = "baofeng777s-labels-v3";
 try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s) s.forEach((l,i)=>{ if (l && AUDIOS[i]) AUDIOS[i].label = l; }); } catch(e){}
 const saveLabels = () => { try { localStorage.setItem(KEY, JSON.stringify(AUDIOS.map(a=>a.label))); } catch(e){} };
 
-let pi = 0, ctx, noiseBuf, hissGain, current = -1, editing = false, token = 0, raf = 0;
+let pi = 0, windGain, nextCrk = 0, nextGust = 0, ctx, noiseBuf, hissGain, current = -1, editing = false, token = 0, raf = 0;
 const el = new Audio(); el.preload = "auto"; el.crossOrigin = "anonymous";
 
 function initAudio(){
@@ -107,6 +107,14 @@ function initAudio(){
   const bp = ctx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=2000; bp.Q.value=.4;
   hissGain = ctx.createGain(); hissGain.gain.value = 0;
   hs.connect(bp); bp.connect(hissGain); hissGain.connect(ctx.destination); hs.start();
+  // vento: ruído grave com rajadas lentas
+  const ws = ctx.createBufferSource(); ws.buffer = noiseBuf; ws.loop = true;
+  const wl = ctx.createBiquadFilter(); wl.type="lowpass"; wl.frequency.value=520; wl.Q.value=1.2;
+  const wb = ctx.createBiquadFilter(); wb.type="bandpass"; wb.frequency.value=260; wb.Q.value=.35;
+  windGain = ctx.createGain(); windGain.gain.value = 0;
+  const lfo = ctx.createOscillator(), lg = ctx.createGain();
+  lfo.frequency.value = .18; lg.gain.value = .03; lfo.connect(lg); lg.connect(windGain.gain); lfo.start();
+  ws.connect(wl); wl.connect(wb); wb.connect(windGain); windGain.connect(ctx.destination); ws.start(0, .7);
 }
 
 function burst(dur, vol){            // chiado curto (squelch)
@@ -148,6 +156,13 @@ function tick(tk){
     const [a0,a1] = P[pi]; pi++;
     if (el.currentTime - a0 < .4) pttPause(a1 - a0);
   }
+  const now = ctx.currentTime;
+  if (now >= nextGust){ windGain.gain.setTargetAtTime(.05 + Math.random()*.09, now, .9); nextGust = now + 1.5 + Math.random()*3; }
+  if (now >= nextCrk){                       // chiado leve de vez em quando
+    burst(.05 + Math.random()*.18, .05 + Math.random()*.1);
+    if (Math.random() < .3) setTimeout(()=>{ if (ctx && el && !el.paused) burst(.04, .07); }, 90);
+    nextCrk = now + 1.2 + Math.random()*3.5;
+  }
   const lvl = 2 + Math.floor(Math.random()*3);
   $("bars").querySelectorAll("i").forEach((b,n)=>b.classList.toggle("on", n<lvl));
   if (hissGain) hissGain.gain.setTargetAtTime(.025 + Math.random()*.03, ctx.currentTime, .05);
@@ -168,11 +183,14 @@ async function play(i){
   el.src = AUDIOS[i].file; el.currentTime = 0; pi = 0;
   try { await el.play(); } catch(e){ setUI("idle"); $("hint").textContent = "Não foi possível tocar " + AUDIOS[i].file + ". Verifique se o arquivo está na pasta."; return; }
   if (tk !== token) return;
+  nextGust = 0; nextCrk = ctx.currentTime + 1 + Math.random()*1.5;
+  windGain.gain.setTargetAtTime(.07, ctx.currentTime, .4);
   setUI("rx", i); tick(tk);
   el.onended = async () => {           // PTT desacionado
     if (tk !== token) return;
     cancelAnimationFrame(raf);
     hissGain.gain.setTargetAtTime(0, ctx.currentTime, .02);
+    windGain.gain.setTargetAtTime(0, ctx.currentTime, .15);
     setUI("tx", i);
     beep(1400, .1, .14); burst(.45, .4);
     await wait(550); if (tk !== token) return;
@@ -183,6 +201,7 @@ async function play(i){
 function stopAll(silent){
   token++; cancelAnimationFrame(raf); el.onended = null; el.pause();
   if (hissGain) hissGain.gain.setTargetAtTime(0, ctx.currentTime, .02);
+  if (windGain) windGain.gain.setTargetAtTime(0, ctx.currentTime, .1);
   if (!silent && ctx){ burst(.25,.3); beep(1400,.08,.12); }
   current = -1; setUI("idle");
 }
