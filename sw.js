@@ -1,6 +1,6 @@
-const CACHE = "baofeng777s-v2";
+const CACHE = "baofeng777s-v3";
 const FILES = ["./","index.html","manifest.webmanifest","icon-192.png","icon-512.png",
-  "1.mp3","2.mp3","3.mp3","4.mp3","5.mp3","6.mp3","7.mp3","8.mp3"];
+  "1.mp3","2.mp3","3.mp3","4.mp3","5.mp3","6.mp3","7.mp3","8.mp3","1med.mp3","2med.mp3","3med.mp3","4med.mp3"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
 });
